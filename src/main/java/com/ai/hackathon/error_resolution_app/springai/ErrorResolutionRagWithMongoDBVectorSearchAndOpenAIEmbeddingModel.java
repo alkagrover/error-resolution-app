@@ -31,6 +31,8 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
 
     private final ChatClient chatClient;
 
+    private final ChatClient chatClientLLM;
+
     private final MongoDBAtlasVectorStore mongoDBAtlasVectorStore;
 
     @Value("${hackathon.rag.allow-load-data-to-vector-db}")
@@ -62,6 +64,7 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
         this.mongoDBAtlasVectorStore = mongoDBAtlasVectorStore;
 
         ChatClient.Builder chatClientBuilder = ChatClient.builder(openAiChatModel);
+        ChatClient.Builder chatClientBuilderLLM = ChatClient.builder(openAiChatModel);
 
         /**
          * This advisor does following,
@@ -84,6 +87,13 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
                 .defaultAdvisors(
                         new MessageChatMemoryAdvisor(new InMemoryChatMemory())
                         , questionAnswerAdvisor
+                        , new SimpleLoggerAdvisor()
+                )
+                .build();
+
+        this.chatClientLLM = chatClientBuilderLLM
+                .defaultAdvisors(
+                        new MessageChatMemoryAdvisor(new InMemoryChatMemory())
                         , new SimpleLoggerAdvisor()
                 )
                 .build();
@@ -159,7 +169,7 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
 
         UserMessage userMessage = new UserMessage("Image for Vector Search", List.of(mediaFile));
 
-        String aIResponse = this.chatClient.prompt()
+        String aIResponse = this.chatClientLLM.prompt()
                 .user("return the text from the image").messages(userMessage)
                 .call()
                 .content();
