@@ -2,13 +2,16 @@ package com.ai.hackathon.error_resolution_app.springai;
 
 import com.ai.hackathon.error_resolution_app.common.CommonHelper;
 import org.apache.commons.lang3.BooleanUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.client.advisor.QuestionAnswerAdvisor;
 import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor;
 import org.springframework.ai.chat.memory.InMemoryChatMemory;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.document.Document;
+import org.springframework.ai.model.Media;
 import org.springframework.ai.openai.OpenAiEmbeddingModel;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.mongodb.atlas.MongoDBAtlasVectorStore;
@@ -19,6 +22,7 @@ import org.springframework.data.mongodb.core.query.Query;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.util.List;
 
 
@@ -26,6 +30,8 @@ import java.util.List;
 public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
 
     private final ChatClient chatClient;
+
+    private final ChatClient chatClientLLM;
 
     private final MongoDBAtlasVectorStore mongoDBAtlasVectorStore;
 
@@ -58,6 +64,7 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
         this.mongoDBAtlasVectorStore = mongoDBAtlasVectorStore;
 
         ChatClient.Builder chatClientBuilder = ChatClient.builder(openAiChatModel);
+        ChatClient.Builder chatClientBuilderLLM = ChatClient.builder(openAiChatModel);
 
         /**
          * This advisor does following,
@@ -80,6 +87,13 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
                 .defaultAdvisors(
                         new MessageChatMemoryAdvisor(new InMemoryChatMemory())
                         , questionAnswerAdvisor
+                        , new SimpleLoggerAdvisor()
+                )
+                .build();
+
+        this.chatClientLLM = chatClientBuilderLLM
+                .defaultAdvisors(
+                        new MessageChatMemoryAdvisor(new InMemoryChatMemory())
                         , new SimpleLoggerAdvisor()
                 )
                 .build();
@@ -141,6 +155,40 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
                 aIResponse
         );
     }
+
+    /**
+     * Method to handle user input, perform RAG, and generate a response.
+     */
+    @GetMapping(CommonHelper.URL_PREFIX_FOR_SPRING + "errorResolutionRag/1.0/image/search")
+    public String generation_image_search(String userInput) throws IOException {
+
+        //read a file from classpath
+        String filePath = userInput; // Example image path
+        // Convert the image file to a byte array
+        Media mediaFile = CommonHelper.getImageDocument(filePath);
+
+        UserMessage userMessage = new UserMessage("Image for Vector Search", List.of(mediaFile));
+
+        String aIResponse = this.chatClientLLM.prompt()
+                .user("return the text from the image").messages(userMessage)
+                .call()
+                .content();
+        String aIResponseUpdated = StringUtils.replace(aIResponse, "\\n", "\n");
+
+        String searchString = StringUtils.substringBetween(aIResponseUpdated, "```", "```");
+
+        String aIResponse2 = this.chatClient.prompt()
+                .user(searchString)
+                .call()
+                .content();
+
+        return CommonHelper.surroundMessage(
+                getClass(),
+                searchString,
+                aIResponse2
+        );
+    }
+
 
 
 }

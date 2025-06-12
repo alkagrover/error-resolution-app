@@ -1,8 +1,13 @@
 package com.ai.hackathon.error_resolution_app.common;
 
 import org.springframework.ai.document.Document;
+import org.springframework.ai.model.Media;
 import org.springframework.ai.reader.pdf.PagePdfDocumentReader;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.core.io.Resource;
+import org.springframework.util.MimeType;
 
+import java.io.IOException;
 import java.util.List;
 
 
@@ -32,5 +37,12 @@ public class CommonHelper {
         // Step 2: Read and transform the document into a list of Document objects
         List<Document> documents = documentReader.read();
         return documents;
+    }
+
+    public static Media getImageDocument(String resourceUrl) throws IOException {
+
+        Resource resource = new ClassPathResource(resourceUrl);
+        return Media.builder().name("exception_pic").data(resource).mimeType(MimeType.valueOf("image/png")).build();
+
     }
 }
