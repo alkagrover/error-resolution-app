@@ -29,28 +29,32 @@ import java.util.List;
 @RestController
 public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
 
-    private final ChatClient chatClient;
+    private ChatClient chatClient;
 
-    private final ChatClient chatClientLLM;
+    private ChatClient chatClientLLM;
+
+    private ChatClient chatClientImg;
 
     private final MongoDBAtlasVectorStore mongoDBAtlasVectorStore;
 
     @Value("${hackathon.rag.allow-load-data-to-vector-db}")
     private String allowLoadDataToVectorDb;
 
+
+
     private static final String CUSTOM_USER_TEXT_ADVISE = """
 
-			Context information is below, surrounded by ---------------------
+          Context information is below, surrounded by ---------------------
 
-			---------------------
-			{question_answer_context}
-			---------------------
+          ---------------------
+          {question_answer_context}
+          ---------------------
 
-			Given the context and provided history information and not prior knowledge,
-			reply to the user comment. If the answer is not in the context, inform
-			the user that context doesn't have answer but I can answer based on general knowledge.
-			Then reply to user with general knowledge using prior knowledge
-			""";
+          Given the context and provided history information and not prior knowledge,
+          reply to the user comment. If the answer is not in the context, inform
+          the user that context doesn't have answer but I can answer based on general knowledge.
+          Then reply to user with general knowledge using prior knowledge
+          """;
 
 
     public ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel(
@@ -64,7 +68,10 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
         this.mongoDBAtlasVectorStore = mongoDBAtlasVectorStore;
 
         ChatClient.Builder chatClientBuilder = ChatClient.builder(openAiChatModel);
+
         ChatClient.Builder chatClientBuilderLLM = ChatClient.builder(openAiChatModel);
+
+        ChatClient.Builder chatClientBuilderImg = ChatClient.builder(openAiChatModel);
 
         /**
          * This advisor does following,
@@ -97,6 +104,19 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
                         , new SimpleLoggerAdvisor()
                 )
                 .build();
+
+        QuestionAnswerAdvisor questionAnswerAdvisor1 = new QuestionAnswerAdvisor(mongoDBAtlasVectorStore,
+                SearchRequest.builder().topK(3).build(), CUSTOM_USER_TEXT_ADVISE);
+
+
+        this.chatClientImg = chatClientBuilderImg
+                .defaultAdvisors(
+                        new MessageChatMemoryAdvisor(new InMemoryChatMemory())
+                        , questionAnswerAdvisor1
+                        , new SimpleLoggerAdvisor()
+                )
+                .build();
+
     }
 
     /**
@@ -116,7 +136,7 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
 
             /**
              * Loading of data in vector database is ideally an offline process.
-             * For hackathon purposes we have put in the same class & put it behind the flag.
+             * For hackathon purposes we have put it in the same class & put it behind the flag.
              * Data has already been loaded in MongoDB so this code is for reference only.
              */
             if (BooleanUtils.toBoolean(allowLoadDataToVectorDb)) {
@@ -173,22 +193,30 @@ public class ErrorResolutionRagWithMongoDBVectorSearchAndOpenAIEmbeddingModel {
                 .user("return the text from the image").messages(userMessage)
                 .call()
                 .content();
-        String aIResponseUpdated = StringUtils.replace(aIResponse, "\\n", "\n");
 
-        String searchString = StringUtils.substringBetween(aIResponseUpdated, "```", "```");
+        String searchString1 = "";
+        if(aIResponse.indexOf("```") != aIResponse.lastIndexOf("```")) {
+            searchString1 = StringUtils.substringBetween(aIResponse, "```", "```");
+        } else if(aIResponse.indexOf("\"") != aIResponse.lastIndexOf("\"")) {
+            searchString1 = StringUtils.substringBetween(aIResponse, "\"", "\"");
+        }
 
-        String aIResponse2 = this.chatClient.prompt()
-                .user(searchString)
+        if (StringUtils.isNotBlank(searchString1)) {
+            searchString1 = StringUtils.replace(searchString1, "\\n", "").trim();
+        } else {
+            searchString1 = StringUtils.replace(aIResponse, "\\n", "").trim();
+        }
+
+        String aIResponse2 = this.chatClientImg.prompt()
+                .user("possible solutions for exception " + searchString1)
                 .call()
                 .content();
 
         return CommonHelper.surroundMessage(
                 getClass(),
-                searchString,
+                searchString1,
                 aIResponse2
         );
     }
-
-
 
 }
